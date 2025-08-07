@@ -13,11 +13,7 @@ interface Document {
   };
 }
 
-// Extract years from question (similar to Python regex)
-function extractYears(question: string): string[] {
-  const yearMatches = question.match(/\b(20\d{2})\b/g) || [];
-  return Array.from(new Set(yearMatches));
-}
+
 
 // Get embeddings from OpenAI
 async function getEmbedding(text: string) {
@@ -30,15 +26,17 @@ async function getEmbedding(text: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { question } = await request.json();
+    const { question, selectedYears, topK } = await request.json();
     
     if (!question) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 });
     }
 
-    // Step 1: Extract years from question
-    const years = extractYears(question);
-    console.log('Extracted years:', years);
+    // Step 1: Use selected years from UI (no automatic extraction)
+    const years = selectedYears || [];
+    const searchTopK = topK || 50; // Default to 50 if not provided
+    console.log('Selected years from UI:', years);
+    console.log('TopK from UI:', searchTopK);
     
     // Step 2: Check if question is related to Aaltoes (more inclusive approach)
     const business_context_keywords = [
@@ -86,15 +84,15 @@ export async function POST(request: NextRequest) {
         // Search summaries with year filter (like original Python code)
         summaryIndex.query({
           vector: questionEmbedding,
-          topK: 15, // Original uses k=15
+          topK: searchTopK, // User-controlled topK
           includeMetadata: true,
           // Apply year filter if years are mentioned (like original: filter={"year": {"$in": state["years"]}})
-          filter: years.length > 0 ? { year: { $in: years.map(y => parseFloat(y)) } } : undefined,
+          filter: years.length > 0 ? { year: { $in: years.map((y: string) => parseFloat(y)) } } : undefined,
         }),
         // Also search questions for additional relevance
         questionsIndex.query({
           vector: questionEmbedding,
-          topK: 15,
+          topK: searchTopK, // User-controlled topK
           includeMetadata: true,
         })
       ]);
@@ -149,10 +147,10 @@ export async function POST(request: NextRequest) {
         docId,
         summaryScore: scores.summary,
         questionScore: scores.question,
-        // Hybrid score: 70% summary + 30% question similarity
-        hybridScore: (scores.summary * 0.7) + (scores.question * 0.3),
+        // Hybrid score: 30% summary + 70% question similarity
+        hybridScore: (scores.summary * 0.3) + (scores.question * 0.7),
         metadata: scores.metadata
-      })).sort((a, b) => b.hybridScore - a.hybridScore).slice(0, 15);
+      })).sort((a, b) => b.hybridScore - a.hybridScore).slice(0, searchTopK);
 
       console.log('Top hybrid documents:', 
         hybridDocuments.slice(0, 5).map((doc: any) => ({
@@ -175,8 +173,8 @@ export async function POST(request: NextRequest) {
 
       console.log('Processing documents from hybrid/summaries:', docIds.length);
 
-      // Step 6: Search chunks for each document (like original Python code)
-      const maxChunksPerDoc = 10; // Original uses k=10
+      // Step 6: Search chunks for each document - 1 chunk per document for diversity
+      const maxChunksPerDoc = 1; // Changed from 10 to 1 for maximum document diversity
       
       console.log(`Getting chunks for ${docIds.length} documents`);
       
@@ -186,7 +184,7 @@ export async function POST(request: NextRequest) {
         // Search chunks (chunks use "id" field)
         let chunkResults = await chunkIndex.query({
           vector: questionEmbedding,
-          topK: maxChunksPerDoc + 1,
+          topK: 1, // Only get 1 chunk per document
           includeMetadata: true,
           filter: { id: docId }, // Chunks use "id" field
         });
@@ -198,7 +196,7 @@ export async function POST(request: NextRequest) {
           console.log(`No chunks found with filters for ${docId}, trying semantic search without filter`);
           chunkResults = await chunkIndex.query({
             vector: questionEmbedding,
-            topK: maxChunksPerDoc + 1,
+            topK: 1, // Only get 1 chunk per document
             includeMetadata: true,
             // No filter - rely on semantic similarity
           });
@@ -226,7 +224,7 @@ export async function POST(request: NextRequest) {
             });
             
             if (filteredMatches.length > 0) {
-              chunkResults.matches = filteredMatches.slice(0, maxChunksPerDoc + 1);
+              chunkResults.matches = filteredMatches.slice(0, 1); // Only take 1 chunk
               console.log(`Found ${filteredMatches.length} chunks via semantic search for document-related content`);
             }
           }
@@ -251,7 +249,7 @@ export async function POST(request: NextRequest) {
           }
         })).filter(chunk => chunk.content)
           .sort((a, b) => b.score - a.score) // Sort by relevance score
-          .slice(0, maxChunksPerDoc) || []; // Take only the best chunks from this document
+          .slice(0, 1) || []; // Take only the best chunk from this document
         
         console.log(`Processed chunks for ${docId}:`, chunks.length);
         allChunks.push(...chunks);
@@ -272,9 +270,9 @@ export async function POST(request: NextRequest) {
       const documentIds = Object.keys(chunksByDocument);
       let maxRounds = Math.max(...Object.values(chunksByDocument).map(chunks => chunks.length));
       
-      for (let round = 0; round < maxRounds && diversifiedChunks.length < 20; round++) {
+      for (let round = 0; round < maxRounds && diversifiedChunks.length < searchTopK; round++) {
         for (const docId of documentIds) {
-          if (chunksByDocument[docId][round] && diversifiedChunks.length < 20) {
+          if (chunksByDocument[docId][round] && diversifiedChunks.length < searchTopK) {
             diversifiedChunks.push(chunksByDocument[docId][round]);
           }
         }

@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Search, FileText, Calendar, ExternalLink, Loader2 } from 'lucide-react';
+import { Search, FileText, Calendar, ExternalLink, Loader2, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Document {
   id: string;
@@ -41,9 +42,24 @@ export default function Home() {
   const [searchData, setSearchData] = useState<SearchResponse | null>(null);
   const [documentDetails, setDocumentDetails] = useState<DocumentDetails | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [topK, setTopK] = useState<number>(50);
   const responseRef = useRef<HTMLDivElement>(null);
 
+  // Available years in the database
+  const availableYears = ['2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025'];
+  
+  // Available topK options
+  const topKOptions = [10, 25, 50, 100];
 
+  // Toggle year selection
+  const toggleYear = (year: string) => {
+    setSelectedYears(prev => 
+      prev.includes(year) 
+        ? prev.filter(y => y !== year)
+        : [...prev, year]
+    );
+  };
 
   // Auto-scroll to bottom of response as it streams
   useEffect(() => {
@@ -88,7 +104,7 @@ export default function Home() {
       const searchResponse = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, selectedYears, topK }),
       });
 
       if (!searchResponse.ok) {
@@ -171,7 +187,7 @@ export default function Home() {
 
   return (
     <main className="h-screen bg-background flex flex-col overflow-hidden">
-      <div className="max-w-6xl mx-auto w-full p-4 lg:p-6 flex flex-col overflow-hidden" style={{height: 'calc(100vh - 8rem)'}}>
+      <div className="max-w-6xl mx-auto w-full p-4 lg:p-6 flex flex-col overflow-hidden" style={{height: 'calc(100vh - 12rem)'}}>
         {/* Header - Fixed height */}
         <div className="flex-shrink-0 pt-4 lg:pt-6 pb-4 lg:pb-6">
           <div className="relative flex items-center mb-6">
@@ -306,7 +322,7 @@ export default function Home() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-auto px-2 py-1 text-xs"
+                                  className="h-auto px-2 py-1 text-xs font-mono"
                                   onClick={() => fetchDocumentDetails(doc.id)}
                                 >
                                   <FileText className="w-3 h-3 mr-1" />
@@ -393,7 +409,7 @@ export default function Home() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-auto px-2 py-1 text-xs"
+                                className="h-auto px-2 py-1 text-xs font-mono"
                                 asChild
                               >
                                 <a
@@ -440,28 +456,121 @@ export default function Home() {
       {/* Search Input - Fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 bg-background border-t z-10">
         <div className="max-w-6xl mx-auto p-4 lg:p-6">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
-              <Textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Ask about Aaltoes board decisions, budgets, or projects..."
-                rows={3}
-                className="resize-none text-sm lg:text-base"
-              />
+          {/* Year Selection and TopK */}
+          <div className="mb-4">
+            {/* Mobile: Compact horizontal scroll */}
+            <div className="sm:hidden">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-medium text-muted-foreground">Top-k:</span>
+                <Select value={topK.toString()} onValueChange={(value) => setTopK(parseInt(value))}>
+                  <SelectTrigger className="w-16 h-8 text-xs font-mono touch-manipulation">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {topKOptions.map((k) => (
+                      <SelectItem key={k} value={k.toString()} className="text-sm font-mono h-10">
+                        {k}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-muted-foreground shrink-0">Board:</span>
+                <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+                  {availableYears.map((year) => (
+                    <Button
+                      key={year}
+                      variant="outline"
+                      size="sm"
+                      className={`text-xs h-8 px-2 font-mono border shrink-0 touch-manipulation ${
+                        selectedYears.includes(year)
+                          ? 'bg-black text-white border-black hover:bg-black hover:text-white hover:border-black'
+                          : 'bg-white text-black border-gray-300 hover:bg-white hover:text-black hover:border-gray-300'
+                      }`}
+                      onClick={() => toggleYear(year)}
+                    >
+                      {year}
+                    </Button>
+                  ))}
+                  {selectedYears.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedYears([])}
+                      className="h-8 w-8 p-0 font-mono hover:bg-gray-100 shrink-0 touch-manipulation"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
+            
+            {/* Desktop: Single line */}
+            <div className="hidden sm:flex flex-wrap gap-2 items-center">
+              <span className="text-sm font-medium text-muted-foreground mr-1">Top-k:</span>
+              <Select value={topK.toString()} onValueChange={(value) => setTopK(parseInt(value))}>
+                <SelectTrigger className="w-16 h-6 text-xs font-mono mr-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {topKOptions.map((k) => (
+                    <SelectItem key={k} value={k.toString()} className="text-xs font-mono h-8">
+                      {k}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm font-medium text-muted-foreground mr-1">Board:</span>
+              {availableYears.map((year) => (
+                <Button
+                  key={year}
+                  variant="outline"
+                  size="sm"
+                  className={`text-xs h-6 px-2 font-mono border ${
+                    selectedYears.includes(year)
+                      ? 'bg-black text-white border-black hover:bg-black hover:text-white hover:border-black'
+                      : 'bg-white text-black border-gray-300 hover:bg-white hover:text-black hover:border-gray-300'
+                  }`}
+                  onClick={() => toggleYear(year)}
+                >
+                  {year}
+                </Button>
+              ))}
+              {selectedYears.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedYears([])}
+                  className="h-6 w-6 p-0 font-mono hover:bg-gray-100"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          </div>
+          
+          <div className="relative">
+            <Textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Ask about Aaltoes board decisions, budgets, or projects..."
+              rows={3}
+              className="resize-none text-sm lg:text-base pr-16"
+            />
             <Button
               onClick={handleSearch}
               disabled={isSearching || !question.trim()}
-              className="px-4 py-3 flex items-center justify-center gap-2 w-full sm:w-auto"
+              className="absolute bottom-2 right-2 h-10 w-10 p-0 font-mono"
+              size="sm"
             >
               {isSearching ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <Search className="w-4 h-4" />
+                <Search className="w-5 h-5" />
               )}
-              <span>Search</span>
             </Button>
           </div>
         </div>

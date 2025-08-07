@@ -1,6 +1,7 @@
 import './globals.css'
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
+import { GeistMono } from 'geist/font/mono'
 
 export const metadata: Metadata = {
   title: 'Aaltoes RAG Assistant',
@@ -14,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${GeistSans.className} antialiased`}>{children}</body>
+      <body className={`${GeistSans.className} ${GeistMono.variable} antialiased`}>{children}</body>
     </html>
   )
 }
