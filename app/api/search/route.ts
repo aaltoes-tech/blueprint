@@ -393,7 +393,13 @@ export async function POST(request: NextRequest) {
     }).filter(Boolean)
       .sort((a: any, b: any) => (b?.score || 0) - (a?.score || 0)) : []; // Sort by question similarity score
 
-    console.log('Used documents (from chunks):', usedDocuments.map(d => ({ 
+    // Step 10: Filter chunks to only include those from documents that will be displayed
+    const displayedDocumentIds = new Set(usedDocuments.map(doc => doc?.id));
+    const filteredChunks = allChunks.filter(chunk => 
+      displayedDocumentIds.has(chunk.metadata.id)
+    );
+
+    console.log('Used documents (displayed to user):', usedDocuments.map(d => ({ 
       name: d?.name, 
       year: d?.year, 
       score: d?.score,
@@ -401,10 +407,12 @@ export async function POST(request: NextRequest) {
       hasLink: !!d?.link 
     })));
 
+    console.log('Chunks sent to LLM:', filteredChunks.length, 'from', displayedDocumentIds.size, 'displayed documents');
+
     return NextResponse.json({
       years,
       documents: usedDocuments,
-      chunks: allChunks,
+      chunks: filteredChunks, // Only chunks from displayed documents
       question: processedQuestion,
       isRelated: true,
     });
