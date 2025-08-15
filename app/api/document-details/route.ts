@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { summaryIndex, questionsIndex } from '@/lib/pinecone';
+import { getIndexes } from '@/lib/pinecone';
 
 export async function POST(request: NextRequest) {
   try {
-    const { docId } = await request.json();
+    const { docId, isPrivate } = await request.json();
     
     if (!docId) {
       return NextResponse.json({ error: 'Document ID is required' }, { status: 400 });
     }
 
     console.log('Fetching details for document:', docId);
+    console.log('Using private access:', isPrivate);
+
+    // Get appropriate indexes based on private access
+    const { summaryIndex, questionsIndex } = getIndexes(isPrivate);
 
     // Use correct field names for each index
     const [summaryResults, questionResults] = await Promise.all([
@@ -18,12 +22,22 @@ export async function POST(request: NextRequest) {
         topK: 1,
         includeMetadata: true,
         filter: { id: docId }, // Summaries use "id" field
+      }).catch(error => {
+        if (error.message?.includes('404') || error.message?.includes('not found')) {
+          throw new Error('Private document access is not implemented yet. Please contact administrator to set up private indexes.');
+        }
+        throw error;
       }),
       questionsIndex.query({
         vector: new Array(1536).fill(0),
         topK: 1, 
         includeMetadata: true,
         filter: { doc_id: docId }, // Questions use "doc_id" field
+      }).catch(error => {
+        if (error.message?.includes('404') || error.message?.includes('not found')) {
+          throw new Error('Private document access is not implemented yet. Please contact administrator to set up private indexes.');
+        }
+        throw error;
       })
     ]);
 
@@ -72,8 +86,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(documentDetails);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Document details error:', error);
+    
+    // Check if this is our custom "not implemented" error
+    if (error.message?.includes('not implemented yet')) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { summaryIndex, chunkIndex, questionsIndex } from '@/lib/pinecone';
+import { getIndexes } from '@/lib/pinecone';
 import openai from '@/lib/openai';
 
 interface Document {
@@ -26,7 +26,7 @@ async function getEmbedding(text: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { question, selectedYears, topK } = await request.json();
+    const { question, selectedYears, topK, isPrivate } = await request.json();
     
     if (!question) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 });
@@ -74,10 +74,14 @@ export async function POST(request: NextRequest) {
     let summaryResults: any = null;
     
     if (isRelatedToAaltoes) {
-      // Step 4a: Get embedding for the question
+      // Step 4a: Get appropriate indexes based on private access
+      const { summaryIndex, chunkIndex, questionsIndex } = getIndexes(isPrivate);
+      console.log('Using indexes for private access:', isPrivate);
+      
+      // Step 4b: Get embedding for the question
       const questionEmbedding = await getEmbedding(processedQuestion);
       
-      // Step 4b: Search both summaries and questions indexes for comprehensive results
+      // Step 4c: Search both summaries and questions indexes for comprehensive results
       console.log('Searching summaries and questions indexes');
       
       const [summaryResults, questionResults] = await Promise.all([
@@ -88,12 +92,22 @@ export async function POST(request: NextRequest) {
           includeMetadata: true,
           // Apply year filter if years are mentioned (like original: filter={"year": {"$in": state["years"]}})
           filter: years.length > 0 ? { year: { $in: years.map((y: string) => parseFloat(y)) } } : undefined,
+        }).catch(error => {
+          if (error.message?.includes('404') || error.message?.includes('not found')) {
+            throw new Error('Private document access is not implemented yet. Please contact administrator to set up private indexes.');
+          }
+          throw error;
         }),
         // Also search questions for additional relevance
         questionsIndex.query({
           vector: questionEmbedding,
           topK: searchTopK, // User-controlled topK
           includeMetadata: true,
+        }).catch(error => {
+          if (error.message?.includes('404') || error.message?.includes('not found')) {
+            throw new Error('Private document access is not implemented yet. Please contact administrator to set up private indexes.');
+          }
+          throw error;
         })
       ]);
 
@@ -182,24 +196,39 @@ export async function POST(request: NextRequest) {
         console.log(`Searching chunks for document: ${docId}`);
         
         // Search chunks (chunks use "id" field)
-        let chunkResults = await chunkIndex.query({
-          vector: questionEmbedding,
-          topK: 1, // Only get 1 chunk per document
-          includeMetadata: true,
-          filter: { id: docId }, // Chunks use "id" field
-        });
+        let chunkResults;
+        try {
+          chunkResults = await chunkIndex.query({
+            vector: questionEmbedding,
+            topK: 1, // Only get 1 chunk per document
+            includeMetadata: true,
+            filter: { id: docId }, // Chunks use "id" field
+          });
+        } catch (error: any) {
+          if (error.message?.includes('404') || error.message?.includes('not found')) {
+            throw new Error('Private document access is not implemented yet. Please contact administrator to set up private indexes.');
+          }
+          throw error;
+        }
         
         console.log(`Chunk results for ${docId}:`, chunkResults.matches?.length || 0);
         
         // If still no results, try without any filter to get relevant chunks
         if (!chunkResults.matches?.length) {
           console.log(`No chunks found with filters for ${docId}, trying semantic search without filter`);
-          chunkResults = await chunkIndex.query({
-            vector: questionEmbedding,
-            topK: 1, // Only get 1 chunk per document
-            includeMetadata: true,
-            // No filter - rely on semantic similarity
-          });
+          try {
+            chunkResults = await chunkIndex.query({
+              vector: questionEmbedding,
+              topK: 1, // Only get 1 chunk per document
+              includeMetadata: true,
+              // No filter - rely on semantic similarity
+            });
+          } catch (error: any) {
+            if (error.message?.includes('404') || error.message?.includes('not found')) {
+              throw new Error('Private document access is not implemented yet. Please contact administrator to set up private indexes.');
+            }
+            throw error;
+          }
           
           // Filter the results to only include chunks that might be from our target documents
           if (chunkResults.matches?.length) {
@@ -417,8 +446,17 @@ export async function POST(request: NextRequest) {
       isRelated: true,
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Search error:', error);
+    
+    // Check if this is our custom "not implemented" error
+    if (error.message?.includes('not implemented yet')) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
     const uniqueContextBlocks = Array.from(new Set(contextBlocks)).slice(0, 12); // Limit to 12 chunks max
     const context = uniqueContextBlocks.join('\n\n---\n\n');
 
-    const prompt = `You are a helpful assistant for Aaltoes. Use only the provided documents. 
-When referencing documents, make them clickable: [Document Name](link).
+    const prompt = `You are a helpful assistant for Aaltoes. To answer the question, you use only the provided documents and always cite the source, make them clickable: [Document Name](link).
+    Use only the provided documents. Make sure to reference at least 5 sources and more if the is hard.
 
 Context:
 ${context}

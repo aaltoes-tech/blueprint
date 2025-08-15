@@ -111,7 +111,7 @@ export default function Home() {
       const response = await fetch('/api/document-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ docId }),
+        body: JSON.stringify({ docId, isPrivate }),
       });
 
       if (!response.ok) {
@@ -146,14 +146,17 @@ export default function Home() {
       const searchResponse = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, selectedYears, topK }),
+        body: JSON.stringify({ question, selectedYears, topK, isPrivate }),
       });
 
+      const searchResult = await searchResponse.json();
+      
       if (!searchResponse.ok) {
-        throw new Error('Search failed');
+        // If there's a specific error message from the API, use it
+        const errorMessage = searchResult.error || 'Search failed';
+        setStreamedResponse(errorMessage);
+        return;
       }
-
-      const searchResult: SearchResponse = await searchResponse.json();
       setDocuments(searchResult.documents);
       setSearchData(searchResult);
       setIsSearching(false);
@@ -348,7 +351,7 @@ export default function Home() {
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
                     <div
                       ref={responseRef}
-                      className="prose prose-neutral prose-sm max-w-none overflow-y-auto flex-1 min-h-0 pl-4 pr-6 py-4"
+                      className="prose prose-neutral prose-sm max-w-none overflow-y-auto flex-1 min-h-0 pl-4 pr-6 py-4 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:no-underline"
                     >
                       <ReactMarkdown 
                         className="leading-relaxed"
@@ -369,7 +372,7 @@ export default function Home() {
                               href={href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-primary underline decoration-1 underline-offset-2 inline-flex items-center gap-1"
+                              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline decoration-2 underline-offset-2 inline-flex items-center gap-1 font-medium transition-colors"
                             >
                               {children}
                               <ExternalLink className="w-3 h-3 inline flex-shrink-0" />
@@ -658,7 +661,7 @@ export default function Home() {
                       size="sm"
                       className={`text-xs h-8 px-2 font-mono border shrink-0 touch-manipulation ${
                         selectedYears.includes(year)
-                          ? 'bg-primary text-primary-foreground border-primary'
+                          ? 'bg-white dark:bg-white text-black border-white dark:border-white'
                           : 'bg-background text-foreground border-border'
                       }`}
                       onClick={() => toggleYear(year)}
@@ -723,7 +726,7 @@ export default function Home() {
                   size="sm"
                   className={`text-xs h-6 px-2 font-mono border ${
                     selectedYears.includes(year)
-                      ? 'bg-primary text-primary-foreground border-primary'
+                      ? 'bg-white dark:bg-white text-black border-white dark:border-white'
                       : 'bg-background text-foreground border-border'
                   }`}
                   onClick={() => toggleYear(year)}
